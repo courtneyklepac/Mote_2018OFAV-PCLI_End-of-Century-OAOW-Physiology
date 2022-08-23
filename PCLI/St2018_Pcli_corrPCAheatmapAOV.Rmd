@@ -1,0 +1,1695 @@
+---
+title: "State Project 2018: *O. faveolata* & *P. clivosa*"
+subtitle: "MML 5/18-8/18"
+author: "Courtney Klepac"
+output: html_notebook
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r, echo=FALSE}
+#libraries
+library(car)
+library(corrplot)
+library(lmerTest)
+library(emmeans)
+library(ggplot2)
+library(ggpubr) 
+library(Hmisc)
+library(dplyr)
+library(FSA)
+library(FactoMineR)
+library(RColorBrewer)
+library(PerformanceAnalytics)
+library(factoextra)
+library(tidyr)
+library(dplyr)
+library(MASS)
+library(reshape2)
+library(cowplot)
+library(car)
+library(devtools)
+library(pairwiseAdonis)
+library(PCAtools)
+library(vegan)
+library(tidyverse)
+library(ggdendro)
+library(reshape2)
+```
+## Import data and set factors and levels
+```{r}
+# data set
+#'raw'
+corr.data <- read.csv("~/Dropbox/Masterdata_allspecies.csv", header = T, na.strings=c("","NA"))
+str(corr.data)
+summary(corr.data)
+
+#set factor levels
+corr.data$Year=factor(corr.data$Year)
+corr.data$Genotype=factor(corr.data$Genotype)
+corr.data$Treatment=factor(corr.data$Treatment)
+corr.data$Treatment=factor(corr.data$Treatment,levels(corr.data$Treatment)[c(1,4,2,3)])
+corr.data$Tank <- as.factor(corr.data$Tank)
+corr.data$Temp <- as.factor(corr.data$Temp)
+corr.data$pH <- as.factor(corr.data$pH)
+corr.data$Species <- as.factor(corr.data$Species)
+corr.data$ETR_E.M<- as.numeric(corr.data$ETR_E.M)
+corr.data$F.ETR<- as.numeric(corr.data$F.ETR)
+corr.data$DW_E.I=as.numeric(corr.data$DW_E.I)
+corr.data$DW_E.M=as.numeric(corr.data$DW_E.M)
+corr.data$DW_M.I=as.numeric(corr.data$DW_M.I)
+corr.data$SA2D_E.I=as.numeric(corr.data$SA2D_E.I)
+corr.data$ETR_E.I=as.numeric(corr.data$ETR_E.I)
+corr.data$slope_E.M =as.numeric(corr.data$slope_E.M)
+corr.data$FvFm_E.M =as.numeric(corr.data$FvFm_E.M)
+corr.data$FvFm_E.I =as.numeric(corr.data$FvFm_E.I)
+corr.data$E.FvFm =as.numeric(corr.data$E.FvFm)
+corr.data$P.R =as.numeric(corr.data$P.R)
+head(corr.data)
+#subset new df based on year and species assayed
+dat2018<-corr.data[corr.data$Year=='2018',]
+pcli<-dat2018[dat2018$Species=='P. clivosa',]
+ofav<-dat2018[dat2018$Species=='O. faveolata',]
+```
+
+## *P. clivosa*
+### Correlations
+```{r}
+#subset into trts
+OW<-pcli[pcli$Treatment=='OW',]
+OA<-pcli[pcli$Treatment=='OA',] 
+OWOA<-pcli[pcli$Treatment=='OAOW',]
+control<-pcli[pcli$Treatment=='Control',]
+#summarise_all(pcli[,8:34],mean)
+
+#Correlation of entire trait data for each treatment, informs potential tradeoffs to stressor
+#separate out timepoints, mid and end
+#need only numeric 
+names(control)
+controlend.num=dplyr::select(control,SA2D_E.I,SA3D_E.I,,DW_E.I,,ETR_E.I,slope_E.I,E.FvFm)
+OAend.num=dplyr::select(OA,SA2D_E.I,SA3D_E.I,,DW_E.I,,ETR_E.I,slope_E.I,E.FvFm,netP,R,grossP,P.R,darkcalc,lightcalc)
+OWend.num=dplyr::select(OW,SA2D_E.I,SA3D_E.I,,DW_E.I,,ETR_E.I,slope_E.I,E.FvFm,netP,R,grossP,P.R,darkcalc,lightcalc)
+OWOAend.num=dplyr::select(OWOA,SA2D_E.I,SA3D_E.I,,DW_E.I,,ETR_E.I,slope_E.I,E.FvFm,netP,R,grossP,P.R,darkcalc,lightcalc)
+
+#Correlation of all treatments for each trait, informs relative response to multiple stressors 
+#set trt (cont=1, OW=2, OA=3, OWOA=4; should be same order as set factor level) to numeric values
+pcli$Treatment=as.numeric(pcli$Treatment)
+pcli$Treatment=as.factor(pcli$Treatment)
+#create variables by treatment of desired trait, update (copy/paste) for each trait
+tcontrol=control.num$FvFm_E.I
+tOW=OW.num$FvFm_E.I
+tOA=OA.num$FvFm_E.I
+tOWOA=OWOA.num$FvFm_E.I
+#combine trt columns into one df for corr across trt for ea trait, change for ea trait
+FvFm_E.I<-cbind(tcontrol,tOW,tOA,tOWOA)
+
+#change for examining each trait or all traits within treatment
+C<-cor(controlend.num,use = "complete.obs")
+C
+C<-cor(OWOAend.num)
+# mat : is a matrix of data
+# ... : further arguments to pass to the native R cor.test function
+cor.mtest <- function(C, ...) {
+  mat <- as.matrix(C)
+  n <- ncol(mat)
+  p.mat<- matrix(NA, n, n)
+  diag(p.mat) <- 0
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      tmp <- cor.test(mat[, i], mat[, j], ...)
+      p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+    }
+  }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+}
+p.mat
+```
+#### Correlation matrix plot 
+```{r}
+#Will need to upate to either treatment or response dataframe
+cor.mtest(controlend.num)
+corrplot(C, method="color",type="upper", col=brewer.pal(n=8, name="RdYlBu"),title = "Control",addCoef.col = "black",diag=FALSE, p.mat=p.mat,sig.level = 0.05,tl.col="black")
+```
+
+#### Scatterplot matrix
+```{r}
+chart.Correlation(controlend.num, histogram=TRUE, pch=19)
+
+pcli <- pcli[-c(5,54), ]
+
+
+pclinewtab<-as.data.table(OWOA)
+pclinewtab[, .(cor=cor(E.FvFm, DW_E.I),
+             p=cor.test(E.FvFm, DW_E.I)$p.value),
+             Genotype]
+# Calculate a summary statistic (here, the r-squared) in a separate data frame
+ GrowthFvfm= list() #Prep a list to store your corr.test results
+ counter = 0 # To store your corr.test into list through iterating
+
+ for (i in unique(pclinewtab$Genotype))
+ {
+ counter = counter + 1
+ # Creating new variables makes the code clearer
+ x = as.numeric(pclinewtab[pclinewtab$Genotype == i,]$DW_E.I)
+ y = as.numeric(pclinewtab[pclinewtab$Genotype == i,]$E.FvFm)
+
+ GrowthFvfm[[counter]] <-cor.test(x,y,method="pearson")
+
+ }
+ 
+labels <- data.frame('p'=c(0.2045,0.1571,0.0024,0.2074), 'R'=c(0.1523,0.1697,0.3545,0.1514))
+ 
+plotfvfm_weight <- ggplot(pcli,aes(x=DW_E.I, y=E.FvFm, color=Genotype))+
+  geom_point()+
+  scale_y_continuous(limits = c(0, 0.85))+
+  #scale_x_continuous(limits = c(-.005, .0075))+
+  geom_smooth(method=lm, se=T, fullrange=TRUE,alpha=0.05)+
+  #geom_text(data=labels, aes(label=paste("Rsq=", R)), 
+            #x=-Inf, y=Inf, hjust=-0.2, vjust=1.2)+
+  theme_classic()+ 
+  scale_color_brewer(palette = "Paired") +
+  facet_grid(~Treatment,scales='free')+
+  ylab("Fv/Fm")+
+  xlab("Growth Rate (g/day)")
+ggsave(plotfvfm_weight, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20210902_pcli_corr-growthFvFm.pdf", useDingbats=FALSE)
+```
+
+### PCA
+```{r}
+#if variables have outliers or are skewed create log transformed dataset
+#first create dataframe of elements I want, comment out which data you are interested in
+pca.data <-dplyr::select(pcli,Genotype,Treatment,Tank,DW_E.I,E.FvFm,P.R,chla,HP,zoox,lightcalc)
+#pca.data <-dplyr::select(pcli,Genotype,Treatment,Tank,SA2D_M.I,SA2D_E.I,SA3D_M.I,SA3D_E.I,BW_M.I,BW_E.I,ETR_M.I,ETR_E.I,slope_M.I,slope_E.I,FvFm_M.I,FvFm_E.I)
+pca.data <- tibble::rownames_to_column(pca.data, "VALUE") #rownames retained from original df, rowname to column to find out true row
+#remove NAs and outliers
+pca.data<-pca.data[-c(5,27,54), ] 
+pca.data2 <- pca.data[complete.cases(pca.data), ]
+pca.data2<-pca.data2[,-c(1) ] 
+#prcomp on response columns, check column numbers 
+names(pca.data2)
+res.pca <- prcomp(pca.data2[,c(4:10)], center = TRUE,scale. = TRUE)
+fviz_eig(res.pca)
+get_eigenvalue(res.pca)
+var <- get_pca_var(res.pca)
+var$contrib
+fviz_pca_var(res.pca, col.var = "black")
+# Total cos2 of variables on Dim.1 and Dim.2
+fviz_cos2(res.pca, choice = "var", axes = 1:2)
+# Color by contribution: quality on the factor map
+fviz_pca_var(res.pca, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")
+)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 10)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 10)
+#this plot combines ind and variables into one plot
+#cols for tank
+cols <- c("Control" = "blue", "OW" = "gold","OA" = "red", "OAOW" = "orange")
+```
+
+#### PCA biplot of treatment
+```{r}
+biplot<-fviz_pca_biplot(res.pca,
+                           geom.ind = "point", mean.point = FALSE,# show points only (nbut not "text")
+                           habillage = pca.data2$Treatment, # color by groups
+                           pointsize = 3,
+                           palette = cols,
+                           addEllipses = TRUE, # ellipses
+                           label = "var",
+                           col.var = "black", repel = TRUE,
+                           legend.title = "Treatment") + theme_minimal() +
+  scale_shape_manual(values=c(16,17,15,19))
+ggexport(biplot, filename = "./manuscript/figures&tables/pcli/20211013_pcli_PCA-trt.pdf")
+
+```
+
+#### PCA biplot of individual
+```{r}
+genobiplot<-fviz_pca_biplot(res.pca,
+                           geom.ind = "point", mean.point = FALSE,# show points only (nbut not "text")
+                           habillage = pca.data2$Genotype, # color by groups
+                           pointsize = 3,
+                           #palette = cols,
+                           addEllipses = TRUE, # ellipses
+                           label = "var",
+                           col.var = "black", repel = TRUE,
+                           legend.title = "Genotype") + theme_minimal()
+ggexport(genobiplot, filename = "./manuscript/figures&tables/pcli/20211013_pcli_PCA-geno.pdf")
+
+```
+
+#### PCA biplot of tank
+```{r}
+tankbiplot<-fviz_pca_biplot(res.pca,
+                           geom.ind = "point", mean.point = FALSE,# show points only (nbut not "text")
+                           habillage = pca.data2$Tank, # color by groups
+                           pointsize = 3,
+                           #palette = cols,
+                           addEllipses = TRUE, # ellipses
+                           label = "var",
+                           col.var = "black", repel = TRUE,
+                           legend.title = "Tank") + theme_minimal()
+ggexport(tankbiplot, filename = "./manuscript/figures&tables/pcli/20211013_pcli_PCA-tank.pdf")
+
+```
+
+### PERMANOVA
+```{r}
+#set up meta data and comm data using pca.data2 with NAs and outliers removed
+pcliend.perm=dplyr::select(pca.data2,DW_E.I,E.FvFm,P.R,chla,HP,zoox,lightcalc) 
+#pclimid.perm=dplyr::select(pcli,SA2D_M.I,BW_M.I,SA3D_M.I,ETR_M.I,FvFm_M.I,slope_M.I)
+pcli.meta.perm=dplyr::select(pca.data2,Genotype,Treatment)
+pcli.meta.perm$int<-interaction(pcli.meta.perm$Genotype,pcli.meta.perm$Treatment)
+
+#Standardize the data
+pcliend.perm.scale<-pcliend.perm %>% mutate_if(is.numeric, scale)
+#distance matrix
+pcliend.dist<- vegdist(pcliend.perm.scale, method="euclidean",na.rm = TRUE)
+#permanova
+adonis(pcliend.dist~ Genotype*Treatment, data = pcli.meta.perm,,na.rm = TRUE,method="eu")
+
+pairwise.adonis(pcliend.perm.scale,factors=pcli.meta.perm$Genotype,sim.function='vegdist',sim.method='euclidean',p.adjust.m='bonferroni')
+pairwise.adonis(pcliend.perm.scale,factors=pcli.meta.perm$Treatment,sim.function='vegdist',sim.method='euclidean',p.adjust.m='bonferroni')
+pairwise.adonis(pcliend.perm.scale,factors=pcli.meta.perm$int,sim.function='vegdist',sim.method='euclidean',p.adjust.m='bonferroni')
+```
+
+### Heatmap
+```{r}
+#alltraits, genotype on row, OAOW
+levels(pcli$Genotype)
+dat <-dplyr::select(pcli,Genotype,Treatment,DW_E.I,E.FvFm,chla,P.R,lightcalc)
+#pivot table to long format
+heat<-pivot_longer(data=dat,cols = -c(Genotype,Treatment), names_to = "trait", values_to = "counts")
+#make sure traits and Genotypes stay in the specified order
+col_order <- c("DW_E.I","E.FvFm","chla","P.R","lightcalc")
+heat$trait <- factor(heat$trait, levels = col_order)
+row_order <- c("17","12","3")
+heat$Genotype <- factor(heat$Genotype, levels = row_order)
+#remove NAs
+heat<-heat[complete.cases(heat),]
+
+#dataframe by OAOW treatment
+pcliOAOW<-heat[heat$Treatment=='OAOW',]
+write.csv(pcliOAOW,file="2018_pcliOAOW_scaledtraitsforheatmap.csv",row.names=FALSE)
+#heatmap with total column (sum of average trait values for each genet)
+pcliOAOWheatmap<-read.csv("2018_pcliOAOW_scaledtraitsforheatmap.csv",header = T)
+pcliOAOWheatmap$Genotype=factor(pcliOAOWheatmap$Genotype)
+pcliOAOWheatmap$trait=factor(pcliOAOWheatmap$trait)
+pcliOAOWheatmap2 <- transform(pcliOAOWheatmap, counts.norm = ave(counts, trait, FUN = scale))
+
+pcliheatmapOAOW <- ggplot(data = pcliOAOWheatmap2, mapping = aes(x = trait, y=Genotype, fill = counts.norm)) +
+  geom_tile() +
+  scale_fill_gradient(name = "Scaled Values",
+                      low = "blue",
+                      high = "red") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+ggsave(pcliheatmapOAOW, filename = "./20220812_pcli_heatmap_OAOW.pdf")
+
+
+#scale values by each trait level independently
+pcliOAOW <- transform(pcliOAOW, counts.norm = ave(counts, trait, FUN = scale))
+#heatmap
+
+pcliheatmap4 <- ggplot(data = pcliOAOW, mapping = aes(x = trait,
+                                                     y=Genotype,
+                                                     fill = counts.norm)) +
+  geom_tile() +
+  xlab(label = "OAOW") +
+  scale_fill_gradient(name = "Scaled Values",
+                      low = "blue",
+                      high = "red") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90))
+ggexport(pcliheatmap4, filename = "./manuscript/figures&tables/pcli/20211013_pcli_heatmap_OAOW.pdf")
+
+#dataframe by Control treatment
+pcliControl<-heat[heat$Treatment=='Control',]
+#scale values by each trait level independently
+pcliControl <- transform(pcliControl, counts.norm = ave(counts, trait, FUN = scale))
+#heatmap
+pcliheatmap1 <- ggplot(data = pcliControl, mapping = aes(x = trait,
+                                                     y=Genotype,
+                                                     fill = counts.norm)) +
+  geom_tile() +
+  xlab(label = "Control") +
+  scale_fill_gradient(name = "Scaled Values",
+                      low = "blue",
+                      high = "red") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90))
+ggexport(pcliheatmap1, filename = "./manuscript/figures&tables/pcli/20211013_pcli_heatmap_Control.pdf")
+
+#dataframe by OA treatment
+pcliOA<-heat[heat$Treatment=='OA',]
+#scale values by each trait level independently
+pcliOA <- transform(pcliOA, counts.norm = ave(counts, trait, FUN = scale))
+#heatmap
+pcliheatmap2 <- ggplot(data = pcliOA, mapping = aes(x = trait,
+                                                     y=Genotype,
+                                                     fill = counts.norm)) +
+  geom_tile() +
+  xlab(label = "OA") +
+  scale_fill_gradient(name = "Scaled Values",
+                      low = "blue",
+                      high = "red") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90))
+ggexport(pcliheatmap2, filename = "./manuscript/figures&tables/pcli/20211013_pcli_heatmap_OA.pdf")
+
+#dataframe by OW treatment
+pcliOW<-heat[heat$Treatment=='OW',]
+#scale values by each trait level independently
+pcliOW <- transform(pcliOW, counts.norm = ave(counts, trait, FUN = scale))
+#heatmap
+pcliheatmap3 <- ggplot(data = pcliOW, mapping = aes(x = trait,
+                                                     y=Genotype,
+                                                     fill = counts.norm)) +
+  geom_tile() +
+  xlab(label = "OW") +
+  scale_fill_gradient(name = "Scaled Values",
+                      low = "blue",
+                      high = "red") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90))
+ggexport(pcliheatmap3, filename = "./manuscript/figures&tables/pcli/20211013_pcli_heatmap_OW.pdf")
+
+```
+f```
+
+#dataframe by trait to make separate scaled heatmaps, then combine at end
+```{r}
+bw<-heat[heat$trait=='BW_E.I',]
+sa2d<-heat[heat$trait=='SA2D_E.I',]
+fvfm<-heat[heat$trait=='FvFm_E.I',]
+etr<-heat[heat$trait=='ETR_E.I',]
+slope<-heat[heat$trait=='slope_E.I',]
+netp<-heat[heat$trait=='netP',]
+pr<-heat[heat$trait=='P.R',]
+lightcalc<-heat[heat$trait=='darkcalc',]
+darkcalc<-heat[heat$trait=='lightcalc',]
+
+
+bw[, 4] <- scale(bw[,4])
+sa2d[, 4] <- scale(sa2d[,4])
+fvfm[, 4] <- scale(fvfm[,4])
+etr[, 4] <- scale(etr[,4])
+slope[, 4] <- scale(slope[,4])
+netp[, 4] <- scale(netp[,4])
+pr[, 4] <- scale(pr[,4])
+lightcalc[, 4] <- scale(lightcalc[,4])
+darkcalc[, 4] <- scale(darkcalc[,4])
+
+h1 <- ggplot(data = bw, mapping = aes(x = Treatment,
+                                      y=Genotype,
+                                      fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "BW") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) + theme(axis.title.x = element_blank()) + theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+
+h2 <- ggplot(data = sa2d, mapping = aes(x = Treatment,
+                                        y=Genotype,
+                                        fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "2D SA") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) + theme(axis.title.x = element_blank()) +theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+
+h3 <- ggplot(data = fvfm, mapping = aes(x = Treatment,
+                                        y=Genotype,
+                                        fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "Fv/Fm") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) + theme(axis.title.x = element_blank()) +theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+
+h4 <- ggplot(data = etr, mapping = aes(x = Treatment,
+                                       y=Genotype,
+                                       fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "ETR") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) +theme(axis.title.x = element_blank()) + theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+
+h5 <- ggplot(data = slope, mapping = aes(x = Treatment,
+                                         y=Genotype,
+                                         fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "Slope") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) + theme(axis.title.x = element_blank()) +theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+
+h6 <- ggplot(data = netp, mapping = aes(x = Treatment,
+                                        y=Genotype,
+                                        fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "Net P") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) + theme(axis.title.x = element_blank()) +theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+
+h7 <- ggplot(data = pr, mapping = aes(x = Treatment,
+                                      y=Genotype,
+                                      fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "P:R") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) + theme(axis.title.x = element_blank()) +theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+
+h8 <- ggplot(data = lightcalc, mapping = aes(x = Treatment,
+                                             y=Genotype,
+                                             fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "Light Calc") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) + theme(axis.title.x = element_blank()) +theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+heatmap
+h9 <- ggplot(data = darkcalc, mapping = aes(x = Treatment,
+                                            y=Genotype,
+                                            fill = counts)) +
+  geom_tile(color="white", size=0.1) + coord_equal() +
+  ggtitle(label = "Dark Calc") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_tufte(base_family="Helvetica") +
+  theme(axis.text.x = element_text(angle = 90)) + theme(axis.title.x = element_blank()) +theme(axis.ticks=element_blank()) + theme(legend.position="bottom") + theme(legend.title=element_blank()) + theme(legend.key.size=unit(0.2, "cm")) + theme(legend.key.width=unit(0.4, "cm")) +
+  theme(plot.margin = unit(c(0.5, 0.5, 0, 0), "cm"))
+
+ggarrange(h1,h2,h3,h4,h5,h6,h7,h8,h9, nrow=2)
+```
+
+### Examining response variables using mixed effects glmm (fixed: treatment & genotype, random: tank)
+#### FvFm
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, E.FvFm !="NA")
+#summary
+Summarize(E.FvFm~Genotype+Treatment, data=pclinew, digits=3)
+Summarize(E.FvFm~Treatment, data=pclinew, digits=3)
+```
+```{r}
+# Statistical tests for maximum quantum yield retained at end of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+fvfm.model <- lmer(E.FvFm ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+#on transformed data
+fvfm.model <- lmer(Efvfmsquare ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+fvfm.model <- lmer(Efvfmlog ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(fvfm.model)
+anova(fvfm.model)
+rand(fvfm.model)
+#confint(fvfm.model,oldNames=F)
+```
+##### Model fitting and assumptions diagnostic 
+```{r}
+x = residuals(fvfm.model)
+plot(fitted(fvfm.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommended due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+outlier(pcli$E.FvFm)
+#find optimal lambda for Box-Cox transformation 
+bc<-boxcox(E.FvFm~Genotype*Treatment, data=pclinew)
+lambda <- bc$x[which.max(bc$y)]
+#lambda=2
+pclinew <- cbind(pclinew, pcli$E.FvFm^2)
+dim(pclinew)
+names(pclinew)[47] <- "Efvfmsquare"
+pcli <- cbind(pclinew, log(pclinew$E.FvFm))
+names(pclinew)[45] <- "Efvfmlog"
+# #fit new linear regression model using the Box-Cox transformation
+# new_model <- lmer(((E.FvFm^lambda-1)/lambda) ~ Treatment  * Genotype + (1|Tank) , data = pcli)
+# anova(new_model)
+# rand(new_model)
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype
+fvfm.emms <- emmeans(fvfm.model, pairwise ~ Genotype|Treatment, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(fvfm.emms$contrasts, adjust="tukey")
+# treatment
+fvfm.emms <- emmeans(fvfm.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(fvfm.emms$contrasts, adjust="tukey")
+#or
+print(emmeans(fvfmtime.model, list(pairwise ~ time)), adjust = c("tukey"))
+```
+##Plots
+###points faceted by treatment
+```{r}
+#boxplots 
+boxplot(E.FvFm~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(E.FvFm~Genotype, data=pclinew,las=2, ylab="",xlab="")
+
+sum<-Summarize(E.FvFm~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.fvfm<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Fv/Fm") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.fvfm, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211010_pcli_endfvfmbytrt.pdf", useDingbats=FALSE)
+```
+####Fv/Fm over time
+```{r}
+pclitopivot<-dplyr::select(pcli,Genotype,Treatment,Tank,I.FvFm,M.FvFm,E.FvFm)
+pclilong<-pivot_longer(data=pclitopivot,cols = -c(Genotype,Treatment,Tank), names_to = "time", values_to = "FvFm")
+pclilong$grtime<-interaction(pclilong$Treatment,pclilong$time) 
+
+#summary
+Summarize(FvFm~Genotype+grtime, data=pclilong, digits=3)
+#raw aov
+fvfmtime.model <- lmer(FvFm ~ Treatment  * Genotype * time + (1|Tank) , data = pclilong)
+#transformed aov
+fvfmtime.model <- lmer(Fvfmsquare ~ Genotype * Treatment * time + (1|Tank) , data = pclilong)
+
+anova(fvfmtime.model)
+rand(fvfmtime.model)
+```
+##### Model fitting and assumptions diagnostic 
+```{r}
+x = residuals(fvfmtime.model)
+plot(fitted(fvfmtime.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclilong, center=mean) # formal statistical test for homogeinity of variance (not recommended due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+outlier(pclilong$FvFm) #OF2 OW tank 9 I.Fvfm = 0.035
+pclilong <- tibble::rownames_to_column(pclilong, "VALUE") #rownames retained from original df, rowname to column to find out true row, here it's 97
+pclilong<-pclilong[-c(97), ] #rerun model and assumption testing after removal of outlier before transformations
+#find optimal lambda for Box-Cox transformation 
+bc<-boxcox(FvFm~Genotype*Treatment*time, data=pclilong)
+lambda <- bc$x[which.max(bc$y)]
+#lambda=2
+pclilong <- cbind(pclilong, pclilong$FvFm^2)
+dim(pclilong)
+names(pclilong)[7] <- "Fvfmsquare"
+```
+####pairwise comparisons
+```{r}
+# genotype
+fvfm.emms <- emmeans(fvfmtime.model, pairwise ~ Treatment|time, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(fvfm.emms$contrasts, adjust="tukey")
+# treatment
+fvfm.emms <- emmeans(fvfmtime.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(fvfm.emms$contrasts, adjust="tukey")
+```
+```{r}
+sum<-Summarize(FvFm~Genotype+grtime, data=pclilong, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment<-gl(4,3,labels=c("Control","OW","OA","OAOW"))
+sum$Time<-gl(3,12,labels=c("End","Initial","Mid"))
+sum$Time=factor(sum$Time,levels(sum$Time)[c(2,3,1)])
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+summary(sum)
+```
+#points with sd or ci 95% bars, comment out which you want
+```{r}
+pd=position_dodge(.75)
+plot.fvfm<-ggplot(sum,aes(x=Time,y=mean,color=Genotype,group=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  geom_line(position=pd, lwd=0.2,alpha=0.5) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.1, position=pd) + 
+  ylab("Fv/Fm") + 
+  xlab("Time point") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.fvfm, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211010_pcli_fvfm-overtime-bytrt.pdf", useDingbats=FALSE)
+```
+####points by treatment, genotype grouped
+```{r}
+sum<-Summarize(FvFm~Treatment+time, data=pclilong, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$Time<-gl(3,4,labels=c("End","Initial","Mid"))
+sum$Time=factor(sum$Time,levels(sum$Time)[c(2,3,1)])
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+
+#cols for tank
+cols <- c("Control" = "blue", "OW" = "gold","OA" = "red", "OAOW" = "orange")
+
+pd=position_dodge(.75)
+plot.fvfm<-ggplot(sum,aes(x=Time,y=mean,color=Treatment,group=Treatment)) + 
+  geom_point(size=3,position=pd) +
+  geom_line(position=pd,lwd=0.5,alpha=0.5) +
+  scale_color_manual(values=cols) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se, color=Treatment), width=.1, position=pd) + 
+  ylab("Fv/Fm") + 
+  xlab("Time") +
+  theme_classic() + 
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.fvfm, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211124_pcli_fvfm-bytime-colortrt.pdf", useDingbats=FALSE)
+```
+
+#### points as end Fv/Fm normalized to start= FvFm retention
+```{r}
+pcli$mqy<-(1-(pcli$I.FvFm-pcli$E.FvFm)/pcli$I.FvFm)
+#need to remove OF2 OW with an initial of 0.035
+sum<-Summarize(mqy~Genotype+Treatment, data=pcli[c(-910,)], digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,4,2,3)])
+
+sum
+
+plot.endfvfm<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2) + 
+  ylab("Fv/Fm Retained") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.endfvfm, height = 6 , width = 10, filename = "./figures/20210706_pcli_fvfmretention.pdf", useDingbats=FALSE)
+```
+
+#### end ETR
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, F.ETR !="NA")
+
+# Statistical tests for F.ETR at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+F.ETR.model <- lmer(F.ETR ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(F.ETR.model)
+anova(F.ETR.model)
+rand(F.ETR.model)
+#confint(F.ETR.model,oldNames=F)
+```
+
+```{r}
+x = residuals(F.ETR.model)
+plot(fitted(F.ETR.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+```
+##### statistical pairwise comparisons
+```{r}
+#genotype
+F.ETR.emms <- emmeans(F.ETR.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(F.ETR.emms$contrasts, adjust="tukey")
+#treatment
+F.ETR.emms <- emmeans(F.ETR.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(F.ETR.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save each individually
+boxplot(F.ETR~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(F.ETR~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#summary stats for reporting and plot data
+sum<-Summarize(F.ETR~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.F.ETR<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("ETR") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.F.ETR, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211010_pcli_F.ETRbytrt.pdf", useDingbats=FALSE)
+```
+#### SA2D_E.I
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, SA2D_E.I !="NA")
+
+# Statistical tests for SA2D_E.I at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+SA2D_E.I.model <- lmer(SA2D_E.I ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(SA2D_E.I.model)
+anova(SA2D_E.I.model)
+rand(SA2D_E.I.model)
+#confint(SA2D_E.I.model,oldNames=F)
+```
+
+```{r}
+x = residuals(SA2D_E.I.model)
+plot(fitted(SA2D_E.I.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+SA2D_E.I.emms <- emmeans(SA2D_E.I.model, pairwise ~ Treatment|Genotype, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(SA2D_E.I.emms$contrasts, adjust="tukey")
+#genotype
+SA2D_E.I.emms <- emmeans(SA2D_E.I.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(SA2D_E.I.emms$contrasts, adjust="tukey")
+#treatment
+SA2D_E.I.emms <- emmeans(SA2D_E.I.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(SA2D_E.I.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save ea individually
+boxplot(SA2D_E.I~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(SA2D_E.I~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#to generate summary stats for reporting and plot data
+sum<-Summarize(SA2D_E.I~Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.SA2D_E.I<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Change in 2D SA (cm^2)") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.SA2D_E.I, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211012_pcli_SA2D_E.Ibytrt.pdf", useDingbats=FALSE)
+```
+####Surface Area (cm) over time
+```{r}
+pclitopivot<-dplyr::select(pcli,Genotype,Treatment,Tank,I.SA,M.SA,E.SA)
+pclilong<-pivot_longer(data=pclitopivot,cols = -c(Genotype,Treatment,Tank), names_to = "time", values_to = "SA2D")
+pclilong$grtime<-interaction(pclilong$Treatment,pclilong$time) 
+
+#aov on raw data
+SA2Dtime.model <- lmer(SA2D ~ Treatment  * Genotype * time + (1|Tank) , data = pclilong)
+#aov on transformed data
+SA2Dtime.model <- lmer(SA2D~ Genotype * grtime + (1|Tank) , data = pclilong)
+
+anova(SA2Dtime.model)
+rand(SA2Dtime.model)
+```
+##### Model fitting and assumptions diagnostic 
+```{r}
+x = residuals(SA2Dtime.model)
+plot(fitted(SA2Dtime.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclilong, center=mean) # formal statistical test for homogeinity of variance (not recommended due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+```
+####pairwise comparisons
+```{r}
+# genotype
+SA2D.emms <- emmeans(SA2Dtime.model, pairwise ~ Treatment|Genotype, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(SA2D.emms$contrasts, adjust="tukey")
+# time
+SA2D.emms <- emmeans(SA2Dtime.model, pairwise ~ time, weights = "proportional", adjust="none")
+rbind(SA2D.emms$contrasts, adjust="tukey")
+# treatment
+SA2D.emms <- emmeans(SA2Dtime.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(SA2D.emms$contrasts, adjust="tukey")
+# genotype * grtime
+SA2D.emms <- emmeans(SA2Dtime.model, pairwise ~ Genotype|grtime, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(SA2D.emms$contrasts, adjust="tukey")
+
+```
+
+### Plots
+```{r}
+#boxplots, save ea individually
+boxplot(SA2D~Treatment, data=pclilong,las=2, ylab="",xlab="")
+boxplot(SA2D~Genotype, data=pclilong,las=2, ylab="",xlab="")
+boxplot(SA2D~time, data=pclilong,las=2, ylab="",xlab="")
+
+#to generate summary stats for reporting and plot data
+sum<-Summarize(SA2D~Genotype+grtime, data=pclilong, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment<-gl(4,3,labels=c("Control","OW","OA","OAOW"))
+sum$Time<-gl(3,12,labels=c("End","Initial","Mid"))
+sum$Time=factor(sum$Time,levels(sum$Time)[c(2,3,1)])
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+```
+#points with sd or ci 95% bars, comment out which you want
+```{r}
+pd=position_dodge(.75)
+plot.SA2D<-ggplot(sum,aes(x=Time,y=mean,color=Genotype,group=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  geom_line(position=pd, lwd=0.2,alpha=0.5) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.1, position=pd) + 
+  ylab("2D Surface Area (cm^2)") + 
+  xlab("Time point") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.SA2D, height = 6 , width = 12, filename = "./manuscript/figures&tables/pcli/20211012_pcli_SA2D-overtime-bytrt.pdf", useDingbats=FALSE)
+```
+
+#### end HP
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, HP !="NA")
+
+# Statistical tests for HP at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+HP.model <- lmer(HP ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+#on transformed data
+HP.model <- lmer(logHP ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(HP.model)
+anova(HP.model)
+rand(HP.model)
+#confint(HP.model,oldNames=F)
+```
+
+```{r}
+x = residuals(HP.model)
+plot(fitted(HP.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+outlier(pclinew$HP) #OF126 OA highest but not extreme outlier
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+HP.emms <- emmeans(HP.model, pairwise ~ Genotype|Treatment, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(HP.emms$contrasts, adjust="tukey")
+#genotype
+HP.emms <- emmeans(HP.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(HP.emms$contrasts, adjust="tukey")
+#treatment
+HP.emms <- emmeans(HP.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(HP.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save each individually
+boxplot(HP~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(HP~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#summary stats for reporting and plot data
+sum<-Summarize(HP~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.HP<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Host Protein ()") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.HP, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20210928_pcli_HPbytrt.pdf", useDingbats=FALSE)
+```
+
+#### end TP
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, TP !="NA")
+
+# Statistical tests for TP at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+TP.model <- lmer(TP ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(TP.model)
+anova(TP.model)
+rand(TP.model)
+#confint(TP.model,oldNames=F)
+```
+
+```{r}
+x = residuals(TP.model)
+plot(fitted(TP.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+TP.emms <- emmeans(TP.model, pairwise ~ Genotype|Treatment, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(TP.emms$contrasts, adjust="tukey")
+#genotype
+TP.emms <- emmeans(TP.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(TP.emms$contrasts, adjust="tukey")
+#treatment
+TP.emms <- emmeans(TP.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(TP.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save each individually
+boxplot(TP~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(TP~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#summary stats for reporting and plot data
+sum<-Summarize(TP~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.TP<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Total Protein ()") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.TP, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211010_pcli_TPbytrt.pdf", useDingbats=FALSE)
+```
+
+#### Chla
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, chla !="NA")
+
+# Statistical tests for chla at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+chla.model <- lmer(chla ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+#on transformed data
+chla.model <- lmer(chlasqrt ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(chla.model)
+anova(chla.model)
+rand(chla.model)
+#confint(chla.model,oldNames=F)
+```
+
+```{r}
+x = residuals(chla.model)
+plot(fitted(chla.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+chla.emms <- emmeans(chla.model, pairwise ~ Treatment|Genotype, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(chla.emms$contrasts, adjust="tukey")
+#genotype
+chla.emms <- emmeans(chla.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(chla.emms$contrasts, adjust="tukey")
+#treatment
+chla.emms <- emmeans(chla.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(chla.emms$contrasts, adjust="tukey")
+```
+### Plots
+##### points over time
+```{r}
+#boxplots 
+boxplot(chla~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(chla~Genotype, data=pclinew,las=2, ylab="",xlab="")
+
+sum<-Summarize(chla~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.chla<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Chlorophyll a ()") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.chla, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211010_pcli_chlabytrt.pdf", useDingbats=FALSE)
+```
+#### netP
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, netP !="NA")
+
+# Statistical tests for netP at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+netP.model <- lmer(netP ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(netP.model)
+anova(netP.model)
+rand(netP.model)
+#confint(netP.model,oldNames=F)
+```
+
+```{r}
+x = residuals(netP.model)
+plot(fitted(netP.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+netP.emms <- emmeans(netP.model, pairwise ~ Treatment|Genotype, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(netP.emms$contrasts, adjust="tukey")
+#genotype
+netP.emms <- emmeans(netP.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(netP.emms$contrasts, adjust="tukey")
+#treatment
+netP.emms <- emmeans(netP.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(netP.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots save ea individually
+boxplot(netP~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(netP~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#to generate summary stats for reporting and plot data
+sum<-Summarize(netP~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.netP<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Net Photosynthesis ()") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.netP, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211010_pcli_netPbytrt.pdf", useDingbats=FALSE)
+```
+
+#### DW_E.I
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, DW_E.I !="NA")
+
+# Statistical tests for DW_E.I at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+DW_E.I.model <- lmer(DW_E.I ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+#on transformed data
+DW_E.I.model <- lmer(DW_E.Isqrt ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(DW_E.I.model)
+anova(DW_E.I.model)
+rand(DW_E.I.model)
+#confint(DW_E.I.model,oldNames=F)
+```
+
+```{r}
+x = residuals(DW_E.I.model)
+plot(fitted(DW_E.I.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+
+#find outlier
+outlier(pclinew$DW_E.I) #PC3 OAOW (1171=5) PC17 OW (1220=54) PC12 OW (1193=27)
+pclinew <- tibble::rownames_to_column(pclinew, "VALUE") #rownames retained from original df, rowname to column to find out true row, here it's 184 and 64
+pclinew<-pclinew[-c(5,27,54), ] 
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+DW_E.I.emms <- emmeans(DW_E.I.model, pairwise ~ Treatment|Genotype, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(DW_E.I.emms$contrasts, adjust="tukey")
+#genotype
+DW_E.I.emms <- emmeans(DW_E.I.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(DW_E.I.emms$contrasts, adjust="tukey")
+#treatment
+DW_E.I.emms <- emmeans(DW_E.I.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(DW_E.I.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save ea individually
+boxplot(DW_E.I~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(DW_E.I~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#to generate summary stats for reporting and plot data
+sum<-Summarize(DW_E.I~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.DW_E.I<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Change in Weight (g/day)") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.DW_E.I, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20210902_pcli_DW_E.Ibytrt.pdf", useDingbats=FALSE)
+```
+####DryWeight (g) over time
+```{r}
+pclitopivot<-dplyr::select(pcli,Genotype,Treatment,Tank,I.DW,M.DW,E.DW)
+pclilong<-pivot_longer(data=pclitopivot,cols = -c(Genotype,Treatment,Tank), names_to = "time", values_to = "DW")
+pclilong$grtime<-interaction(pclilong$Treatment,pclilong$time) 
+
+#aov on raw data
+DWtime.model <- lmer(DW ~ Treatment  * Genotype * time + (1|Tank) , data = pclilong)
+#aov on transformed data
+DWtime.model <- lmer(sqrtDW ~ Genotype *Treatment * time + (1|Tank) , data = pclilong)
+
+anova(DWtime.model)
+rand(DWtime.model)
+```
+##### Model fitting and assumptions diagnostic 
+```{r}
+x = residuals(DWtime.model)
+plot(fitted(DWtime.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclilong, center=mean) # formal statistical test for homogeinity of variance (not recommended due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+outlier(pclilong$DW) #OF3 OAOW.I.DW
+pclilong <- tibble::rownames_to_column(pclilong, "VALUE") #rownames retained from original df, rowname to column to find out true row, here it's 97
+pclilong<-pclilong[-c(175), ] #rerun model and assumption testing after removal of outlier before transformations
+#find optimal lambda for Box-Cox transformation 
+bc<-boxcox(DW~Genotype*Treatment*time, data=pclilong)
+lambda <- bc$x[which.max(bc$y)]
+#lambda=0.87
+pclilong <- cbind(pclilong, sqrt(pclilong$DW))
+dim(pclilong)
+names(pclilong)[7] <- "sqrtDW"
+```
+####pairwise comparisons
+```{r}
+# genotype
+DW.emms <- emmeans(DWtime.model, pairwise ~ Genotype|Treatment, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(DW.emms$contrasts, adjust="tukey")
+# treatment
+DW.emms <- emmeans(DWtime.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(DW.emms$contrasts, adjust="tukey")
+```
+
+### Plots
+```{r}
+#boxplots, save ea individually
+boxplot(DW~Treatment, data=pclilong,las=2, ylab="",xlab="")
+boxplot(DW~Genotype, data=pclilong,las=2, ylab="",xlab="")
+boxplot(DW~time, data=pclilong,las=2, ylab="",xlab="")
+
+#to generate summary stats for reporting and plot data
+sum<-Summarize(DW~Genotype+grtime, data=pclilong, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment<-gl(4,3,labels=c("Control","OW","OA","OAOW"))
+sum$Time<-gl(3,12,labels=c("End","Initial","Mid"))
+sum$Time=factor(sum$Time,levels(sum$Time)[c(2,3,1)])
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+```
+#points with sd or ci 95% bars, comment out which you want
+```{r}
+pd=position_dodge(.75)
+plot.DW<-ggplot(sum,aes(x=Time,y=mean,color=Genotype,group=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  geom_line(position=pd, lwd=0.2,alpha=0.5) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.1, position=pd) + 
+  ylab("Weight (g)") + 
+  xlab("Time point") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.DW, height = 6 , width = 12, filename = "./manuscript/figures&tables/pcli/20211012_pcli_DW-overtime-bytrt.pdf", useDingbats=FALSE)
+```
+####points by treatment, genotype grouped
+```{r}
+sum<-Summarize(DW~Treatment+time, data=pclilong, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$Time<-gl(3,4,labels=c("End","Initial","Mid"))
+sum$Time=factor(sum$Time,levels(sum$Time)[c(2,3,1)])
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+
+#cols for tank
+cols <- c("Control" = "blue", "OW" = "gold","OA" = "red", "OAOW" = "orange")
+
+pd=position_dodge(.75)
+plot.DW<-ggplot(sum,aes(x=Treatment,y=mean,color=Treatment,group=interaction(Time,Treatment))) + 
+  geom_point(size=3,position=pd) +
+  geom_line(position=pd,lwd=0.5,alpha=0.5) +
+  scale_color_manual(values=cols) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se, color=Treatment), width=.1, position=pd) + 
+  ylab("Dry Weight (g)") + 
+  xlab("Treatment") +
+  theme_classic() + 
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.DW, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211124_pcli_DW-bytrt.pdf", useDingbats=FALSE)
+```
+#### R
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, R !="NA")
+
+# Statistical tests for R at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+R.model <- lmer(R ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(R.model)
+anova(R.model)
+rand(R.model)
+#confint(R.model,oldNames=F)
+```
+
+```{r}
+x = residuals(R.model)
+plot(fitted(R.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+R.emms <- emmeans(R.model, pairwise ~ Genotype|Treatment, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(R.emms$contrasts, adjust="tukey")
+#genotype
+R.emms <- emmeans(R.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(R.emms$contrasts, adjust="tukey")
+#treatment
+R.emms <- emmeans(R.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(R.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots 
+boxplot(R~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(R~Genotype, data=pclinew,las=2, ylab="",xlab="")
+
+sum<-Summarize(R~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.R<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Respiration ()") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.R, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211012_pcli_Rbytrt.pdf", useDingbats=FALSE)
+```
+#### lightcalc
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, lightcalc !="NA")
+
+# Statistical tests for lightcalc at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+lightcalc.model <- lmer(lightcalc ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+#on transformed data
+lightcalc.model <- lmer(lightcalctrans ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(lightcalc.model)
+anova(lightcalc.model)
+rand(lightcalc.model)
+#confint(lightcalc.model,oldNames=F)
+```
+
+```{r}
+x = residuals(lightcalc.model)
+plot(fitted(lightcalc.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+lightcalc.emms <- emmeans(lightcalc.model, pairwise ~ Genotype|Treatment, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(lightcalc.emms$contrasts, adjust="tukey")
+#genotype
+lightcalc.emms <- emmeans(lightcalc.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(lightcalc.emms$contrasts, adjust="tukey")
+#treatment
+lightcalc.emms <- emmeans(lightcalc.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(lightcalc.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save each individually
+boxplot(lightcalc~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(lightcalc~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#summary stats for reporting and plot data
+sum<-Summarize(lightcalc~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.lightcalc<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Light Calcification ()") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.lightcalc, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20210902_pcli_lightcalcbytrt.pdf", useDingbats=FALSE)
+```
+#### darkcalc
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, darkcalc !="NA")
+
+# Statistical tests for darkcalc at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+darkcalc.model <- lmer(darkcalc ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+#on transformed data
+darkcalc.model <- lmer(darkcalctrans ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(darkcalc.model)
+anova(darkcalc.model)
+rand(darkcalc.model)
+#confint(darkcalc.model,oldNames=F)
+```
+
+```{r}
+x = residuals(darkcalc.model)
+plot(fitted(darkcalc.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+#find optimal lambda for Box-Cox transformation 
+pclinew$darkcalcabs<-abs(pclinew$darkcalc)
+bc<-boxcox(darkcalcabs~Genotype*Treatment, data=pclinew)
+lambda <- bc$x[which.max(bc$y)]
+pclinew <- cbind(pclinew, sqrt(pclinew$darkcalc))
+dim(pclinew)
+names(pclinew)[51] <- "darkcalctrans"
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+darkcalc.emms <- emmeans(darkcalc.model, pairwise ~ Treatment|Genotype, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(darkcalc.emms$contrasts, adjust="tukey")
+#genotype
+darkcalc.emms <- emmeans(darkcalc.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(darkcalc.emms$contrasts, adjust="tukey")
+#treatment
+darkcalc.emms <- emmeans(darkcalc.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(darkcalc.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save ea individually
+boxplot(darkcalc~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(darkcalc~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#to generate summary stats for reporting and plot data
+sum<-Summarize(darkcalc~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.darkcalc<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Dark Calcification ()") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.darkcalc, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211012_pcli_darkcalcbytrt.pdf", useDingbats=FALSE)
+```
+#### P.R
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, P.R !="NA")
+
+# Statistical tests for P.R at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+P.R.model <- lmer(P.R ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+#on transformed data
+P.R.model <- lmer(P.Rtrans ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(P.R.model)
+anova(P.R.model)
+rand(P.R.model)
+#confint(P.R.model,oldNames=F)
+```
+
+```{r}
+x = residuals(P.R.model)
+plot(fitted(P.R.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+outlier(pclinew$P.R)
+pclinew <- tibble::rownames_to_column(pclinew, "VALUE") #rownames retained from original df, rowname to column to find out true row, here it's 184 and 64
+pclinew<-pclinew[-c(50), ] 
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+P.R.emms <- emmeans(P.R.model, pairwise ~ Genotype|Treatment, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(P.R.emms$contrasts, adjust="tukey")
+#genotype
+P.R.emms <- emmeans(P.R.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(P.R.emms$contrasts, adjust="tukey")
+#treatment
+P.R.emms <- emmeans(P.R.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(P.R.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save ea individually
+boxplot(P.R~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(P.R~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#to generate summary stats for reporting and plot data
+sum<-Summarize(P.R~Genotype+Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.P.R<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Daily Photosynthesis:Respiration") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.P.R, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20211012_pcli_P.Rbytrt.pdf", useDingbats=FALSE)
+```
+#### zoox
+```{r}
+#remove genotypes not included in biometrics
+pclinew<-subset(pcli, zoox !="NA")
+
+# Statistical tests for zoox at of assay 
+# Analysis of variance (2-way) ANOVA dat (mixed linear model)
+# Mixed Effects model origin_dest- random effect of colony nested in tank
+# Since the model is completely balanced the SS type I, II or III will provide the same result
+zoox.model <- lmer(zoox ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+#on transformed data
+zoox.model <- lmer(zooxsqrt ~ Treatment  * Genotype + (1|Tank) , data = pclinew)
+
+#summary(zoox.model)
+anova(zoox.model)
+rand(zoox.model)
+#get r2 values
+r2 <- r2beta(model=zoox.model,partial=TRUE,method='sgv')
+print(r2)
+#confint(zoox.model,oldNames=F)
+```
+
+```{r}
+x = residuals(zoox.model)
+plot(fitted(zoox.model), x) 
+leveneTest(x ~ Genotype * Treatment, data=pclinew, center=mean) # formal statistical test for homogeinity of variance (not recommed due the small sample size)
+qqnorm(x); qqline(x) # qq plot to check for normal distribution of residuals
+hist(x) # histogram of residuals to check for normal distribution of residuals
+shapiro.test(x) # formal statistical test
+#find optimal lambda for Box-Cox transformation 
+bc<-boxcox(zoox~Genotype*Treatment, data=pclinew)
+lambda <- bc$x[which.max(bc$y)]
+pclinew <- cbind(pclinew, sqrt(pclinew$zoox))
+dim(pclinew)
+names(pclinew)[51] <- "zooxsqrt"
+
+#find outlier
+outlier(pclinew$zoox) #PC17 OA t17 (1230=33)
+pclinew <- tibble::rownames_to_column(pclinew, "VALUE") #rownames retained from original df, rowname to column to find out true 
+pclinew<-pclinew[-c(33), ] 
+```
+##### statistical pairwise comparisons
+```{r}
+# genotype*treatment
+zoox.emms <- emmeans(zoox.model, pairwise ~ Treatment|Genotype, weights = "proportional", adjust="none")
+# P.value adjustment of the Bonferroni
+rbind(zoox.emms$contrasts, adjust="tukey")
+#genotype
+zoox.emms <- emmeans(zoox.model, pairwise ~ Genotype, weights = "proportional", adjust="none")
+rbind(zoox.emms$contrasts, adjust="tukey")
+#treatment
+zoox.emms <- emmeans(zoox.model, pairwise ~ Treatment, weights = "proportional", adjust="none")
+rbind(zoox.emms$contrasts, adjust="tukey")
+```
+### Plots
+```{r}
+#boxplots, save ea individually
+boxplot(zoox~Treatment, data=pclinew,las=2, ylab="",xlab="")
+boxplot(zoox~Genotype, data=pclinew,las=2, ylab="",xlab="")
+#to generate summary stats for reporting and plot data
+sum<-Summarize(zoox~Treatment, data=pclinew, digits=3)
+sum$se = sum$sd/sqrt(sum$n)
+sum$CI_lower2 <- sum$mean - qnorm(0.975)*sum$se
+sum$CI_upper2 <- sum$mean + qnorm(0.975)*sum$se
+sum$Treatment=factor(sum$Treatment,levels(sum$Treatment)[c(1,2,4,3)])
+sum$Genotype=factor(sum$Genotype,levels(sum$Genotype)[c(3,1,2)])
+
+#points with sd or ci 95% bars, comment out which you want
+pd=position_dodge(.5)
+plot.zoox<-ggplot(sum,aes(x=Genotype,y=mean,color=Genotype)) + 
+  geom_point(size=3,position=pd) +
+  scale_color_brewer(palette = "Paired") +
+  geom_errorbar(aes(ymin=CI_lower2, ymax=CI_upper2, color=Genotype), width=.2, position=pd) + 
+  ylab("Zoox Cell Density (cells/ml/cm^2)") + 
+  xlab("Genotype") +
+  theme_classic() + 
+  facet_grid(~Treatment) +
+  theme(plot.margin=margin(0.5,0.5,0.5,0.5,'cm'), panel.grid.minor=element_blank()) 
+ggsave(plot.zoox, height = 6 , width = 10, filename = "./manuscript/figures&tables/pcli/20210902_pcli_zooxbytrt.pdf", useDingbats=FALSE)
+```
